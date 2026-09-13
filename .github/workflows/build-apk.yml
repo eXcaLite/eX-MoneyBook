@@ -1,4 +1,4 @@
-name: Build eX Money Book V2.4 Search APK
+name: Build InPense V2.6 APK
 
 on:
   workflow_dispatch:
@@ -22,8 +22,8 @@ jobs:
       - name: Rename APK
         run: |
           mkdir -p apk-output
-          cp app/build/outputs/apk/debug/app-debug.apk apk-output/eX_MoneyBook_V2_4_SEARCH.apk
+          cp app/build/outputs/apk/debug/app-debug.apk apk-output/InPense_V2_6.apk
       - uses: actions/upload-artifact@v4
         with:
-          name: eX-MoneyBook-V2-4-SEARCH-APK
-          path: apk-output/eX_MoneyBook_V2_4_SEARCH.apk
+          name: InPense-V2-6-APK
+          path: apk-output/InPense_V2_6.apk
