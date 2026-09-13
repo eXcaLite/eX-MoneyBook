@@ -5,6 +5,10 @@ import android.app.AlertDialog;
 import android.app.DatePickerDialog;
 import android.graphics.Color;
 import android.os.Bundle;
+import android.os.Handler;
+import android.os.Looper;
+import android.text.Editable;
+import android.text.TextWatcher;
 import android.text.InputType;
 import android.view.Gravity;
 import android.view.View;
@@ -18,11 +22,17 @@ import java.util.*;
 public class MainActivity extends Activity {
     DBHelper db;
     LinearLayout listBox;
-    TextView incomeText, expenseText, balanceText, dateText;
+    TextView incomeText, expenseText, balanceText, dateText, syncStatus;
     Spinner typeSpinner, categorySpinner;
-    EditText amountEdit, noteEdit;
+    EditText amountEdit, noteEdit, searchEdit;
+    Spinner searchTypeSpinner, searchPeriodSpinner;
+    TextView searchCount;
     String selectedDate;
     DecimalFormat money = new DecimalFormat("#,##0.00");
+    Handler autoHandler = new Handler(Looper.getMainLooper());
+    Runnable autoRunnable;
+    volatile boolean syncing = false;
+    long lastSyncMs = 0;
 
     final int BG = Color.rgb(16,19,23);
     final int PANEL = Color.rgb(25,30,36);
@@ -41,6 +51,11 @@ public class MainActivity extends Activity {
         selectedDate = new SimpleDateFormat("yyyy-MM-dd", Locale.US).format(new Date());
         buildUi();
         refreshAll();
+        configureAutoSync();
+        try {
+            String[] c=SecurePrefs.load(this);
+            if(Boolean.parseBoolean(c[6])) syncNow(false);
+        } catch(Exception ignored) {}
     }
 
     TextView tv(String text, float sp, int color, boolean bold) {
@@ -103,6 +118,18 @@ public class MainActivity extends Activity {
         brandText.addView(tv("รายรับ • รายจ่าย • คงเหลือ", 13, MUTED, false));
         brand.addView(brandText, new LinearLayout.LayoutParams(0, -2, 1));
         root.addView(brand);
+
+        LinearLayout cloudRow = row();
+        Button cloudSettings = button("Cloud Settings");
+        Button syncNow = button("Sync Now");
+        syncStatus = tv("Cloud: ยังไม่ Sync", 12, MUTED, false);
+        cloudSettings.setOnClickListener(v -> showCloudSettings());
+        syncNow.setOnClickListener(v -> syncNow());
+        cloudRow.addView(cloudSettings, new LinearLayout.LayoutParams(0, dp(48), 1));
+        spaceH(cloudRow, 6);
+        cloudRow.addView(syncNow, new LinearLayout.LayoutParams(0, dp(48), 1));
+        root.addView(cloudRow);
+        root.addView(syncStatus);
         space(root, 14);
 
         // Summary
@@ -170,7 +197,57 @@ public class MainActivity extends Activity {
         root.addView(add, new LinearLayout.LayoutParams(-1, dp(52)));
         space(root, 18);
 
-        root.addView(tv("รายการล่าสุด", 18, TEXT, true));
+        root.addView(tv("ค้นหารายการ", 18, TEXT, true));
+        space(root, 6);
+
+        searchEdit = new EditText(this);
+        searchEdit.setHint("ค้นหา หมายเหตุ / หมวดหมู่ / ประเภท / จำนวนเงิน");
+        searchEdit.setHintTextColor(MUTED);
+        searchEdit.setTextColor(TEXT);
+        searchEdit.setSingleLine(true);
+        searchEdit.setBackgroundColor(PANEL);
+        searchEdit.setPadding(dp(12),0,dp(12),0);
+        root.addView(searchEdit, new LinearLayout.LayoutParams(-1,dp(52)));
+        space(root,6);
+
+        LinearLayout searchFilters=row();
+        searchTypeSpinner=new Spinner(this);
+        searchTypeSpinner.setBackgroundColor(PANEL);
+        ArrayAdapter<String> st=new ArrayAdapter<String>(this,android.R.layout.simple_spinner_dropdown_item,
+                new String[]{"ทั้งหมด","รายรับ","รายจ่าย"});
+        searchTypeSpinner.setAdapter(st);
+
+        searchPeriodSpinner=new Spinner(this);
+        searchPeriodSpinner.setBackgroundColor(PANEL);
+        ArrayAdapter<String> sp=new ArrayAdapter<String>(this,android.R.layout.simple_spinner_dropdown_item,
+                new String[]{"ทั้งหมด","วันนี้","เดือนนี้","ปีนี้"});
+        searchPeriodSpinner.setAdapter(sp);
+
+        searchFilters.addView(searchTypeSpinner,new LinearLayout.LayoutParams(0,dp(52),1));
+        spaceH(searchFilters,6);
+        searchFilters.addView(searchPeriodSpinner,new LinearLayout.LayoutParams(0,dp(52),1));
+        root.addView(searchFilters);
+        space(root,4);
+
+        searchCount=tv("พบ 0 รายการ",12,MUTED,false);
+        root.addView(searchCount);
+        space(root,8);
+
+        searchEdit.addTextChangedListener(new TextWatcher() {
+            public void beforeTextChanged(CharSequence s,int start,int count,int after) {}
+            public void onTextChanged(CharSequence s,int start,int before,int count) { refreshAll(); }
+            public void afterTextChanged(Editable e) {}
+        });
+        searchTypeSpinner.setOnItemSelectedListener(new android.widget.AdapterView.OnItemSelectedListener() {
+            public void onItemSelected(android.widget.AdapterView<?> p, View v, int pos, long id) { refreshAll(); }
+            public void onNothingSelected(android.widget.AdapterView<?> p) {}
+        });
+        searchPeriodSpinner.setOnItemSelectedListener(new android.widget.AdapterView.OnItemSelectedListener() {
+            public void onItemSelected(android.widget.AdapterView<?> p, View v, int pos, long id) { refreshAll(); }
+            public void onNothingSelected(android.widget.AdapterView<?> p) {}
+        });
+
+        root.addView(tv("ผลการค้นหา / รายการล่าสุด", 18, TEXT, true));
         space(root, 6);
         listBox = new LinearLayout(this);
         listBox.setOrientation(LinearLayout.VERTICAL);
@@ -235,6 +312,24 @@ public class MainActivity extends Activity {
         noteEdit.setText("");
         refreshAll();
         Toast.makeText(this, "บันทึกแล้ว", Toast.LENGTH_SHORT).show();
+        maybeSyncAfterChange();
+    }
+
+    boolean matchesSearch(String date,String type,String cat,double amount,String note) {
+        String wantedType=searchTypeSpinner==null||searchTypeSpinner.getSelectedItem()==null ? "ทั้งหมด" : String.valueOf(searchTypeSpinner.getSelectedItem());
+        if(!"ทั้งหมด".equals(wantedType) && !wantedType.equals(type)) return false;
+
+        String period=searchPeriodSpinner==null||searchPeriodSpinner.getSelectedItem()==null ? "ทั้งหมด" : String.valueOf(searchPeriodSpinner.getSelectedItem());
+        String today=new SimpleDateFormat("yyyy-MM-dd",Locale.US).format(new Date());
+        if("วันนี้".equals(period) && !today.equals(date)) return false;
+        if("เดือนนี้".equals(period) && (date==null || date.length()<7 || !date.substring(0,7).equals(today.substring(0,7)))) return false;
+        if("ปีนี้".equals(period) && (date==null || date.length()<4 || !date.substring(0,4).equals(today.substring(0,4)))) return false;
+
+        String q=searchEdit==null ? "" : searchEdit.getText().toString().trim().toLowerCase(Locale.getDefault());
+        if(q.length()==0) return true;
+        String hay=((note==null?"":note)+" "+(cat==null?"":cat)+" "+(type==null?"":type)+" "+
+                money.format(amount)+" "+String.valueOf(amount)+" "+(date==null?"":date)).toLowerCase(Locale.getDefault());
+        return hay.contains(q);
     }
 
     void refreshAll() {
@@ -247,11 +342,13 @@ public class MainActivity extends Activity {
 
         listBox.removeAllViews();
         Cursor c = db.listAll();
+        int shown=0;
         if (!c.moveToFirst()) {
             TextView empty = tv("ยังไม่มีรายการ", 14, MUTED, false);
             empty.setGravity(Gravity.CENTER);
             empty.setPadding(0,dp(20),0,dp(20));
             listBox.addView(empty);
+            if(searchCount!=null) searchCount.setText("พบ 0 รายการ");
             c.close();
             return;
         }
@@ -263,6 +360,9 @@ public class MainActivity extends Activity {
             String cat = c.getString(3);
             double amount = c.getDouble(4);
             String note = c.getString(5);
+
+            if(!matchesSearch(date,type,cat,amount,note)) continue;
+            shown++;
 
             LinearLayout item = row();
             item.setPadding(dp(10),dp(10),dp(10),dp(10));
@@ -289,6 +389,14 @@ public class MainActivity extends Activity {
             space(listBox, 5);
         } while(c.moveToNext());
         c.close();
+
+        if(searchCount!=null) searchCount.setText("พบ "+shown+" รายการ");
+        if(shown==0) {
+            TextView empty = tv("ไม่พบรายการที่ค้นหา", 14, MUTED, false);
+            empty.setGravity(Gravity.CENTER);
+            empty.setPadding(0,dp(20),0,dp(20));
+            listBox.addView(empty);
+        }
     }
 
     void confirmDelete(long id) {
@@ -297,8 +405,186 @@ public class MainActivity extends Activity {
                 .setMessage("ต้องการลบรายการนี้หรือไม่?")
                 .setNegativeButton("ยกเลิก", null)
                 .setPositiveButton("ลบ", (d,w) -> {
-                    db.delete(id);
+                    db.softDelete(id);
                     refreshAll();
+                    maybeSyncAfterChange();
                 }).show();
     }
+
+    int intervalIndex(int value) {
+        int[] vals={1,5,10,15,30,60};
+        for(int i=0;i<vals.length;i++) if(vals[i]==value)return i;
+        return 1;
+    }
+
+    int intervalValue(int index) {
+        int[] vals={1,5,10,15,30,60};
+        if(index<0||index>=vals.length)return 5;
+        return vals[index];
+    }
+
+    void showCloudSettings() {
+        try {
+            String[] old = SecurePrefs.load(this);
+            LinearLayout box = new LinearLayout(this);
+            box.setOrientation(LinearLayout.VERTICAL);
+            box.setPadding(dp(20), dp(6), dp(20), dp(6));
+
+            EditText url = settingField("Project URL", old[0]);
+            EditText key = settingField("anon / publishable key", old[1]);
+            EditText email = settingField("Email", old[2]);
+            EditText pass = settingField("Password", old[3]);
+            pass.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_PASSWORD);
+
+            Switch auto = new Switch(this); auto.setText("Auto Sync"); auto.setTextColor(TEXT);
+            auto.setChecked(Boolean.parseBoolean(old[4]));
+
+            Spinner interval = new Spinner(this);
+            ArrayAdapter<String> ia=new ArrayAdapter<String>(this,android.R.layout.simple_spinner_dropdown_item,
+                    new String[]{"1 นาที","5 นาที","10 นาที","15 นาที","30 นาที","60 นาที"});
+            interval.setAdapter(ia);
+            int oldInt=5; try{oldInt=Integer.parseInt(old[5]);}catch(Exception ignored){}
+            interval.setSelection(intervalIndex(oldInt));
+
+            CheckBox onOpen=new CheckBox(this); onOpen.setText("Sync เมื่อเปิดแอป"); onOpen.setTextColor(TEXT);
+            onOpen.setChecked(Boolean.parseBoolean(old[6]));
+            CheckBox afterChange=new CheckBox(this); afterChange.setText("Sync หลัง เพิ่ม / แก้ / ลบ"); afterChange.setTextColor(TEXT);
+            afterChange.setChecked(Boolean.parseBoolean(old[7]));
+            CheckBox onClose=new CheckBox(this); onClose.setText("Sync เมื่อออก/พักแอป"); onClose.setTextColor(TEXT);
+            onClose.setChecked(Boolean.parseBoolean(old[8]));
+
+            box.addView(url); box.addView(key); box.addView(email); box.addView(pass);
+            box.addView(auto); box.addView(interval); box.addView(onOpen); box.addView(afterChange); box.addView(onClose);
+
+            new AlertDialog.Builder(this)
+                    .setTitle("Cloud Settings")
+                    .setMessage("ใช้ anon/publishable key เท่านั้น ห้ามใช้ service_role")
+                    .setView(box)
+                    .setNegativeButton("ยกเลิก", null)
+                    .setPositiveButton("Save", (d,w) -> {
+                        try {
+                            SecurePrefs.save(this,url.getText().toString().trim(),key.getText().toString().trim(),
+                                    email.getText().toString().trim(),pass.getText().toString(),
+                                    auto.isChecked(),intervalValue(interval.getSelectedItemPosition()),
+                                    onOpen.isChecked(),afterChange.isChecked(),onClose.isChecked());
+                            configureAutoSync();
+                            updateSyncStatus();
+                            Toast.makeText(this,"บันทึก Cloud Settings แล้ว",Toast.LENGTH_SHORT).show();
+                        } catch(Exception ex) {
+                            Toast.makeText(this,"Save Error: "+ex.getMessage(),Toast.LENGTH_LONG).show();
+                        }
+                    }).show();
+        } catch(Exception ex) {
+            Toast.makeText(this,"Settings Error: "+ex.getMessage(),Toast.LENGTH_LONG).show();
+        }
+    }
+
+    EditText settingField(String hint, String value) {
+        EditText e=new EditText(this);
+        e.setHint(hint); e.setHintTextColor(MUTED); e.setTextColor(TEXT); e.setText(value);
+        e.setBackgroundColor(PANEL); e.setPadding(dp(10),0,dp(10),0);
+        LinearLayout.LayoutParams p=new LinearLayout.LayoutParams(-1,dp(52)); p.setMargins(0,0,0,dp(7));
+        e.setLayoutParams(p); return e;
+    }
+
+    void configureAutoSync() {
+        if(autoRunnable!=null) autoHandler.removeCallbacks(autoRunnable);
+        try {
+            String[] c=SecurePrefs.load(this);
+            boolean enabled=Boolean.parseBoolean(c[4]);
+            int mins=5; try{mins=Integer.parseInt(c[5]);}catch(Exception ignored){}
+            final long intervalMs=Math.max(1,mins)*60L*1000L;
+            autoRunnable=new Runnable() {
+                @Override public void run() {
+                    try {
+                        String[] x=SecurePrefs.load(MainActivity.this);
+                        if(Boolean.parseBoolean(x[4])) syncNow(false);
+                    } catch(Exception ignored) {}
+                    autoHandler.postDelayed(this,intervalMs);
+                }
+            };
+            if(enabled) autoHandler.postDelayed(autoRunnable,intervalMs);
+        } catch(Exception ignored) {}
+    }
+
+    void maybeSyncAfterChange() {
+        try {
+            String[] c=SecurePrefs.load(this);
+            if(Boolean.parseBoolean(c[7])) syncNow(false);
+        } catch(Exception ignored) {}
+    }
+
+    void updateSyncStatus() {
+        try {
+            String[] c=SecurePrefs.load(this);
+            boolean auto=Boolean.parseBoolean(c[4]);
+            int mins=5; try{mins=Integer.parseInt(c[5]);}catch(Exception ignored){}
+            String last=lastSyncMs==0?"-":new SimpleDateFormat("HH:mm:ss",Locale.US).format(new Date(lastSyncMs));
+            String next="-";
+            if(auto) {
+                long base=lastSyncMs==0?System.currentTimeMillis():lastSyncMs;
+                next=new SimpleDateFormat("HH:mm:ss",Locale.US).format(new Date(base+mins*60L*1000L));
+            }
+            syncStatus.setText("Cloud: "+(syncing?"กำลัง Sync...":"พร้อม")+"   •   Last: "+last+"   •   Next: "+(auto?next:"Auto OFF"));
+        } catch(Exception e) {
+            syncStatus.setText("Cloud: ยังไม่ตั้งค่า");
+        }
+    }
+
+    void syncNow() { syncNow(true); }
+
+    void syncNow(boolean showToast) {
+        final String[] c;
+        try { c=SecurePrefs.load(this); }
+        catch(Exception ex) { Toast.makeText(this,ex.getMessage(),Toast.LENGTH_LONG).show(); return; }
+        if(c[0].length()==0 || c[1].length()==0 || c[2].length()==0 || c[3].length()==0) {
+            if(showToast) Toast.makeText(this,"กรุณาตั้งค่า Cloud Settings ก่อน",Toast.LENGTH_SHORT).show();
+            return;
+        }
+        if(syncing)return;
+        syncing=true;
+        updateSyncStatus();
+        new Thread(() -> {
+            try {
+                SupabaseSyncClient cli=new SupabaseSyncClient(c[0],c[1],c[2],c[3]);
+                cli.login();
+                cli.pushDirty(db);
+                cli.pullAll(db);
+                db.markAllClean();
+                runOnUiThread(() -> {
+                    syncing=false;
+                    lastSyncMs=System.currentTimeMillis();
+                    refreshAll();
+                    updateSyncStatus();
+                    if(showToast) Toast.makeText(this,"Sync สำเร็จ",Toast.LENGTH_SHORT).show();
+                });
+            } catch(Exception ex) {
+                runOnUiThread(() -> {
+                    syncing=false;
+                    syncStatus.setText("Cloud: Sync Error");
+                    if(showToast) Toast.makeText(this,"Sync Error: "+ex.getMessage(),Toast.LENGTH_LONG).show();
+                });
+            }
+        }).start();
+    }
+
+    @Override protected void onResume() {
+        super.onResume();
+        configureAutoSync();
+        updateSyncStatus();
+    }
+
+    @Override protected void onStop() {
+        try {
+            String[] c=SecurePrefs.load(this);
+            if(Boolean.parseBoolean(c[8])) syncNow(false);
+        } catch(Exception ignored) {}
+        super.onStop();
+    }
+
+    @Override protected void onDestroy() {
+        if(autoRunnable!=null) autoHandler.removeCallbacks(autoRunnable);
+        super.onDestroy();
+    }
+
 }
