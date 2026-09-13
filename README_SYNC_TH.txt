@@ -1,4 +1,4 @@
-eX Money Book Android V2.4 Sync + Search
+InPense Android V2.6 Sync + Search
 created by :: eXcaLite ::
 
 ค้นหาแบบทันที:
@@ -13,7 +13,7 @@ created by :: eXcaLite ::
 - ทั้งหมด / วันนี้ / เดือนนี้ / ปีนี้
 - แสดงจำนวนรายการที่พบ
 
-Auto Sync จาก V2.2 อยู่ครบทุกอย่าง
+Auto Sync จาก V2.6 อยู่ครบทุกอย่าง
 ฐานข้อมูลเดิมและ Cloud Settings เดิมใช้ต่อได้
 
 GitHub Actions จะสร้าง:

@@ -23,8 +23,10 @@ public class MainActivity extends Activity {
     DBHelper db;
     LinearLayout listBox;
     TextView incomeText, expenseText, balanceText, dateText, syncStatus;
-    Spinner typeSpinner, categorySpinner;
-    EditText amountEdit, noteEdit, searchEdit;
+    RadioButton incomeRadio, expenseRadio;
+    Spinner categorySpinner;
+    EditText amountEdit, noteEdit, searchEdit, customCategoryEdit;
+    Button addCategoryButton, deleteCategoryButton;
     Spinner searchTypeSpinner, searchPeriodSpinner;
     TextView searchCount;
     String selectedDate;
@@ -40,9 +42,10 @@ public class MainActivity extends Activity {
     final int TEXT = Color.rgb(242,244,247);
     final int MUTED = Color.rgb(167,176,188);
     final int ACCENT = Color.rgb(77,163,255);
-    final int INCOME = Color.rgb(61,220,151);
+    final int INCOME = Color.rgb(37,99,235);
     final int EXPENSE = Color.rgb(255,107,107);
     final int GOLD = Color.rgb(246,200,95);
+    final int BALANCE = Color.rgb(34,197,94);
 
     @Override
     protected void onCreate(Bundle b) {
@@ -105,17 +108,17 @@ public class MainActivity extends Activity {
 
         // Brand
         LinearLayout brand = row();
-        TextView logo = tv("eX", 30, GOLD, true);
-        logo.setGravity(Gravity.CENTER);
-        logo.setBackgroundColor(PANEL2);
+        ImageView logo = new ImageView(this);
+        logo.setImageResource(R.drawable.ic_launcher);
+        logo.setScaleType(ImageView.ScaleType.CENTER_INSIDE);
         LinearLayout.LayoutParams lpLogo = new LinearLayout.LayoutParams(dp(64), dp(64));
         brand.addView(logo, lpLogo);
 
         LinearLayout brandText = new LinearLayout(this);
         brandText.setOrientation(LinearLayout.VERTICAL);
         brandText.setPadding(dp(12), 0, 0, 0);
-        brandText.addView(tv("eX Money Book", 24, TEXT, true));
-        brandText.addView(tv("รายรับ • รายจ่าย • คงเหลือ", 13, MUTED, false));
+        brandText.addView(tv("InPense", 25, TEXT, true));
+        brandText.addView(tv("รายรับ • รายจ่าย • คงเหลือ  •  V2.6", 13, MUTED, false));
         brand.addView(brandText, new LinearLayout.LayoutParams(0, -2, 1));
         root.addView(brand);
 
@@ -136,7 +139,7 @@ public class MainActivity extends Activity {
         LinearLayout sums = row();
         incomeText = card("รายรับ\n0.00", INCOME);
         expenseText = card("รายจ่าย\n0.00", EXPENSE);
-        balanceText = card("คงเหลือ\n0.00", GOLD);
+        balanceText = card("คงเหลือ\n0.00", BALANCE);
         sums.addView(incomeText, new LinearLayout.LayoutParams(0, -2, 1));
         spaceH(sums, 6);
         sums.addView(expenseText, new LinearLayout.LayoutParams(0, -2, 1));
@@ -156,21 +159,53 @@ public class MainActivity extends Activity {
         root.addView(dateText, new LinearLayout.LayoutParams(-1, -2));
         space(root, 8);
 
-        typeSpinner = new Spinner(this);
-        ArrayAdapter<String> typeAdapter = new ArrayAdapter<String>(this, android.R.layout.simple_spinner_dropdown_item,
-                new String[]{"รายจ่าย","รายรับ"});
-        typeSpinner.setAdapter(typeAdapter);
-        typeSpinner.setBackgroundColor(PANEL);
-        typeSpinner.setOnItemSelectedListener(new android.widget.AdapterView.OnItemSelectedListener() {
-            public void onItemSelected(android.widget.AdapterView<?> p, View v, int pos, long id) { loadCategories(); }
-            public void onNothingSelected(android.widget.AdapterView<?> p) {}
+        TextView typeLabel = tv("รับ / จ่าย", 14, MUTED, true);
+        root.addView(typeLabel);
+        LinearLayout typeRow = row();
+        incomeRadio = new RadioButton(this);
+        incomeRadio.setText("รับ (รายรับ)");
+        incomeRadio.setTextColor(INCOME);
+        expenseRadio = new RadioButton(this);
+        expenseRadio.setText("จ่าย (รายจ่าย)");
+        expenseRadio.setTextColor(EXPENSE);
+        expenseRadio.setChecked(true);
+        incomeRadio.setOnCheckedChangeListener((b,checked) -> {
+            if(checked) { expenseRadio.setChecked(false); loadCategories(); }
         });
-        root.addView(typeSpinner, new LinearLayout.LayoutParams(-1, dp(52)));
+        expenseRadio.setOnCheckedChangeListener((b,checked) -> {
+            if(checked) { incomeRadio.setChecked(false); loadCategories(); }
+        });
+        typeRow.addView(incomeRadio,new LinearLayout.LayoutParams(0,dp(52),1));
+        typeRow.addView(expenseRadio,new LinearLayout.LayoutParams(0,dp(52),1));
+        root.addView(typeRow);
         space(root, 8);
 
         categorySpinner = new Spinner(this);
         categorySpinner.setBackgroundColor(PANEL);
         root.addView(categorySpinner, new LinearLayout.LayoutParams(-1, dp(52)));
+        space(root, 6);
+
+        customCategoryEdit = new EditText(this);
+        customCategoryEdit.setHint("เพิ่มรายการ / หมวดหมู่เอง");
+        customCategoryEdit.setHintTextColor(MUTED);
+        customCategoryEdit.setTextColor(TEXT);
+        customCategoryEdit.setSingleLine(true);
+        customCategoryEdit.setBackgroundColor(PANEL);
+        customCategoryEdit.setPadding(dp(12),0,dp(12),0);
+        root.addView(customCategoryEdit,new LinearLayout.LayoutParams(-1,dp(48)));
+        space(root,6);
+
+        LinearLayout categoryButtons=row();
+        addCategoryButton=button("+ เพิ่มรายการเอง");
+        deleteCategoryButton=button("- ลบรายการเอง");
+        addCategoryButton.setTextColor(ACCENT);
+        deleteCategoryButton.setTextColor(EXPENSE);
+        addCategoryButton.setOnClickListener(v -> addCustomCategory());
+        deleteCategoryButton.setOnClickListener(v -> deleteCustomCategory());
+        categoryButtons.addView(addCategoryButton,new LinearLayout.LayoutParams(0,dp(48),1));
+        spaceH(categoryButtons,6);
+        categoryButtons.addView(deleteCategoryButton,new LinearLayout.LayoutParams(0,dp(48),1));
+        root.addView(categoryButtons);
         space(root, 8);
 
         amountEdit = new EditText(this);
@@ -254,7 +289,7 @@ public class MainActivity extends Activity {
         root.addView(listBox);
 
         space(root, 18);
-        TextView sign = tv("created by :: eXcaLite ::", 12, ACCENT, false);
+        TextView sign = tv("InPense V2.6  •  created by :: eXcaLite ::", 12, ACCENT, false);
         sign.setGravity(Gravity.CENTER);
         root.addView(sign);
 
@@ -286,15 +321,111 @@ public class MainActivity extends Activity {
         dateText.setText("วันที่: " + selectedDate);
     }
 
+    String currentType() {
+        return incomeRadio != null && incomeRadio.isChecked() ? "รายรับ" : "รายจ่าย";
+    }
+
+    String[] builtInIncomeCategories() {
+        return new String[]{"เงินเดือน","กำไรเทรด","โบนัส","ขายของ","ดอกเบี้ย","เงินคืน/รีเบต","รายได้เสริม","ของขวัญ/เงินให้","อื่นๆ"};
+    }
+
+    String[] builtInExpenseCategories() {
+        return new String[]{"อาหาร","ค่าน้ำ","ค่าไฟ","ค่าเน็ต","ค่าโทรศัพท์","ค่าเช่าบ้าน","เดินทาง","ช้อปปิ้ง","สุขภาพ","เทรด","ธรรมเนียม","การศึกษา","อื่นๆ"};
+    }
+
+    boolean containsIgnoreCase(Collection<String> values,String name) {
+        for(String x:values) if(x!=null && x.equalsIgnoreCase(name)) return true;
+        return false;
+    }
+
+    boolean arrayContainsIgnoreCase(String[] values,String name) {
+        for(String x:values) if(x.equalsIgnoreCase(name)) return true;
+        return false;
+    }
+
     void loadCategories() {
-        String type = String.valueOf(typeSpinner.getSelectedItem());
-        String[] cats;
-        if ("รายรับ".equals(type))
-            cats = new String[]{"เงินเดือน","กำไรเทรด","โบนัส","ขายของ","ดอกเบี้ย","อื่นๆ"};
-        else
-            cats = new String[]{"อาหาร","เดินทาง","ค่าน้ำ/ไฟ","โทรศัพท์/อินเทอร์เน็ต","บ้าน","ช้อปปิ้ง","สุขภาพ","เทรด/ค่าธรรมเนียม","อื่นๆ"};
-        ArrayAdapter<String> a = new ArrayAdapter<String>(this, android.R.layout.simple_spinner_dropdown_item, cats);
+        String keep = categorySpinner.getSelectedItem()==null ? "" : String.valueOf(categorySpinner.getSelectedItem());
+        ArrayList<String> cats = new ArrayList<String>();
+        if("รายรับ".equals(currentType())) {
+            cats.addAll(Arrays.asList(builtInIncomeCategories()));
+            cats.addAll(CategoryPrefs.loadIncome(this));
+        } else {
+            cats.addAll(Arrays.asList(builtInExpenseCategories()));
+            cats.addAll(CategoryPrefs.loadExpense(this));
+        }
+
+        LinkedHashSet<String> unique=new LinkedHashSet<String>();
+        for(String x:cats) if(x!=null && x.trim().length()>0) unique.add(x.trim());
+        ArrayList<String> finalCats=new ArrayList<String>(unique);
+
+        ArrayAdapter<String> a = new ArrayAdapter<String>(this, android.R.layout.simple_spinner_dropdown_item, finalCats);
         categorySpinner.setAdapter(a);
+
+        if(keep.length()>0) {
+            int pos=finalCats.indexOf(keep);
+            if(pos>=0) categorySpinner.setSelection(pos);
+        }
+    }
+
+    void addCustomCategory() {
+        String name=customCategoryEdit.getText().toString().trim();
+        if(name.length()==0) {
+            Toast.makeText(this,"กรุณาพิมพ์ชื่อรายการ",Toast.LENGTH_SHORT).show();
+            return;
+        }
+
+        boolean income="รายรับ".equals(currentType());
+        String[] built=income?builtInIncomeCategories():builtInExpenseCategories();
+        ArrayList<String> custom=income?CategoryPrefs.loadIncome(this):CategoryPrefs.loadExpense(this);
+
+        if(arrayContainsIgnoreCase(built,name) || containsIgnoreCase(custom,name)) {
+            Toast.makeText(this,"มีรายการนี้อยู่แล้ว",Toast.LENGTH_SHORT).show();
+            return;
+        }
+
+        custom.add(name);
+        if(income) CategoryPrefs.saveIncome(this,custom); else CategoryPrefs.saveExpense(this,custom);
+        customCategoryEdit.setText("");
+        loadCategories();
+
+        for(int i=0;i<categorySpinner.getCount();i++) {
+            if(name.equals(String.valueOf(categorySpinner.getItemAtPosition(i)))) {
+                categorySpinner.setSelection(i);
+                break;
+            }
+        }
+        Toast.makeText(this,"เพิ่มรายการแล้ว",Toast.LENGTH_SHORT).show();
+    }
+
+    void deleteCustomCategory() {
+        if(categorySpinner.getSelectedItem()==null) return;
+        final String name=String.valueOf(categorySpinner.getSelectedItem());
+        final boolean income="รายรับ".equals(currentType());
+        String[] built=income?builtInIncomeCategories():builtInExpenseCategories();
+
+        if(arrayContainsIgnoreCase(built,name)) {
+            Toast.makeText(this,"รายการมาตรฐานลบไม่ได้",Toast.LENGTH_SHORT).show();
+            return;
+        }
+
+        final ArrayList<String> custom=income?CategoryPrefs.loadIncome(this):CategoryPrefs.loadExpense(this);
+        if(!containsIgnoreCase(custom,name)) {
+            Toast.makeText(this,"รายการนี้ไม่ได้เป็นรายการที่เพิ่มเอง",Toast.LENGTH_SHORT).show();
+            return;
+        }
+
+        new AlertDialog.Builder(this)
+                .setTitle("ลบรายการเอง")
+                .setMessage("ลบ \""+name+"\" ออกจากรายการที่เลือกหรือไม่?")
+                .setNegativeButton("ยกเลิก",null)
+                .setPositiveButton("ลบ",(d,w) -> {
+                    for(int i=custom.size()-1;i>=0;i--) {
+                        if(custom.get(i).equalsIgnoreCase(name)) custom.remove(i);
+                    }
+                    if(income) CategoryPrefs.saveIncome(this,custom); else CategoryPrefs.saveExpense(this,custom);
+                    loadCategories();
+                    Toast.makeText(this,"ลบรายการแล้ว",Toast.LENGTH_SHORT).show();
+                }).show();
     }
 
     void addItem() {
@@ -305,8 +436,8 @@ public class MainActivity extends Activity {
             Toast.makeText(this, "กรุณาใส่จำนวนเงินมากกว่า 0", Toast.LENGTH_SHORT).show();
             return;
         }
-        String type = String.valueOf(typeSpinner.getSelectedItem());
-        String cat = String.valueOf(categorySpinner.getSelectedItem());
+        String type = currentType();
+        String cat = categorySpinner.getSelectedItem()==null ? "" : String.valueOf(categorySpinner.getSelectedItem());
         db.add(selectedDate, type, cat, amount, noteEdit.getText().toString().trim());
         amountEdit.setText("");
         noteEdit.setText("");

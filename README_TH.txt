@@ -1,4 +1,4 @@
-eX Money Book - Android V1
+InPense - Android V1
 
 ฟังก์ชัน
 - บันทึกรายรับ / รายจ่าย
