@@ -1,0 +1,20 @@
+eX Money Book - GitHub APK Builder
+
+1) เข้า github.com แล้ว Login
+2) กด New repository
+3) ตั้งชื่อ เช่น eX-MoneyBook และสร้าง repository
+4) กด Add file > Upload files
+5) อัปโหลด "เนื้อหาข้างในโฟลเดอร์โปรเจกต์นี้" ทั้งหมด
+   สำคัญ: settings.gradle, build.gradle, app และ .github ต้องอยู่ที่ root ของ repository
+6) Commit changes
+7) เปิดแท็บ Actions
+8) เลือก "Build eX Money Book APK"
+9) กด Run workflow > Run workflow
+10) รอ Build เสร็จและเปิด run ที่เป็นสีเขียว
+11) ด้านล่างหัวข้อ Artifacts กด "eX-MoneyBook-V1-APK"
+12) แตก ZIP ที่ดาวน์โหลด จะได้ eX_MoneyBook_V1.apk
+
+หมายเหตุ:
+- Workflow จะ Build อัตโนมัติเมื่อ push เข้า branch main ด้วย
+- APK รุ่นนี้เป็น Debug APK เหมาะสำหรับติดตั้งทดสอบเอง
+- ไม่ต้องใส่ API key, password หรือ signing key ใดๆ
